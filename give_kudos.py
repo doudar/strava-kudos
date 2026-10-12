@@ -1,4 +1,5 @@
 import os
+import sys
 import time
 
 from playwright.sync_api import sync_playwright
@@ -11,10 +12,13 @@ class KudosGiver:
     Following.
     """
     def __init__(self, max_run_duration=540) -> None:
-        self.EMAIL = os.environ.get('STRAVA_EMAIL')
-        self.PASSWORD = os.environ.get('STRAVA_PASSWORD')
-
-        if self.EMAIL is None or self.PASSWORD is None:
+        # Keep credentials out of the environment inherited by the driver/browser.
+        self.EMAIL = os.environ.pop('STRAVA_EMAIL', None)
+        self.PASSWORD = os.environ.pop('STRAVA_PASSWORD', None)
+        # Playwright debug output can include values passed to fill().
+        os.environ.pop('DEBUG', None)
+        os.environ.pop('PWDEBUG', None)
+        if not self.EMAIL or not self.PASSWORD:
             raise Exception("Must set environ variables EMAIL AND PASSWORD. \
                 e.g. run export STRAVA_EMAIL=YOUR_EMAIL")
 
@@ -70,7 +74,6 @@ class KudosGiver:
 
         try:
             self.own_profile_id = self.page.locator(".user-menu > a").get_attribute('href').split("/athletes/")[1]
-            print("id", self.own_profile_id)
         except Exception as _:
             print("can't find own profile ID")
 
@@ -178,10 +181,20 @@ class KudosGiver:
 
 
 def main():
-    kg = KudosGiver()
-    kg.email_login()
-    kg.give_kudos()
+    phase = "starting the browser (check credentials and container configuration)"
+    try:
+        kg = KudosGiver()
+        phase = "signing into Strava"
+        kg.email_login()
+        phase = "giving kudos"
+        kg.give_kudos()
+    except Exception:
+        # Playwright exceptions can contain fill values and page data. Never print
+        # the exception or traceback from a run that has access to credentials.
+        print(f"Kudos run failed while {phase}. Error details suppressed to protect credentials.", file=sys.stderr)
+        return 1
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

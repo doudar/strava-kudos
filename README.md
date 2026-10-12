@@ -72,6 +72,16 @@ To add secrets for GH actions, navigate to Settings -> Security -> Secrets and V
 
 The scheduled and manually dispatched jobs run inside the Playwright Python container. Python, Firefox, and browser system libraries come from the image; the job only installs the Python dependencies before running `give_kudos.py`. You can start a manual run from Actions -> Give Strava Kudos -> Run workflow.
 
+The workflow sets `HOME=/root` to match the container user, which Firefox requires. A browser smoke test runs without credentials before the Strava step.
+
+### Credential handling
+
+Strava secrets are passed only to the `Give kudos` step, not checkout, dependency installation, or tests. The GitHub token has read-only repository contents permission, and checkout does not save it in Git configuration. Local `.env` and `.env.*` files are ignored by Git, and only the application's explicit build inputs enter the Docker build context.
+
+The script removes Strava credentials from the process environment before starting Playwright so the driver and browser do not inherit them. Playwright debug logging is disabled for the credential-bearing run, and failures report their phase without printing exception details or tracebacks, which can include login values. No traces, screenshots, or authenticated browser state are saved by the script.
+
+Credentials still need to exist in the Python process while logging in and are sent to Strava. Use trusted runners and dependencies; these controls do not protect against a compromised host or dependency. Keep verbose diagnostics confined to the credential-free smoke test.
+
 ## 🔬Testing
 The original script was manually tested with Python 3.9.10 on Ubuntu 20.04.6. The current container uses Python 3.12 on Ubuntu 24.04 and Playwright 1.63.0. Use the Docker smoke-test command above to verify Firefox launches before running against your Strava account.
 
