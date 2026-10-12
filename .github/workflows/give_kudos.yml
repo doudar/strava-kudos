@@ -12,13 +12,13 @@ jobs:
   run-kudos-cron:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    container:
+      # Keep this version in sync with requirements.txt and Dockerfile.
+      image: mcr.microsoft.com/playwright/python:v1.63.0-noble
+      options: --init
     steps:
-      - uses: actions/checkout@v3 
-      - uses: actions/setup-python@v4
-        with:
-          python-version: '3.9'
-          cache: 'pip'
-      - run: pip install -r requirements.txt
-      - run: playwright install
-      - run: python give_kudos.py
-        
+      - uses: actions/checkout@v4
+      - name: Install Python dependencies
+        run: python -m pip install --no-cache-dir -r requirements.txt
+      - name: Give kudos
+        run: python -u give_kudos.py

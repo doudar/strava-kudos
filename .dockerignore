@@ -1,0 +1,6 @@
+# Only send the application's build inputs to Docker (never credentials).
+**
+!Dockerfile
+!.dockerignore
+!requirements.txt
+!give_kudos.py
