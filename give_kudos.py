@@ -1,10 +1,30 @@
 import os
 import sys
 import time
+from urllib.parse import urlparse
 
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError, sync_playwright
 
 BASE_URL = "https://www.strava.com/"
+
+
+class LoginFailure(Exception):
+    # Only these fixed messages may reach the log; never interpolate page data.
+    STEPS = {
+        'open': 'opening the login page',
+        'email': 'filling the email field',
+        'continue': 'submitting the email form',
+        'password_option': 'waiting for a password option (Strava may require a code or verification)',
+        'password': 'filling the password field',
+        'submit': 'submitting the password form',
+        'confirm': 'waiting for the dashboard (login was not confirmed)',
+        'profile': 'loading the signed-in profile',
+    }
+
+    def __init__(self, step, timed_out=False):
+        description = self.STEPS.get(step, 'an unknown login step')
+        reason = 'Timed out' if timed_out else 'Failed'
+        super().__init__(f'{reason} while {description}. No credential or page details logged.')
 
 class KudosGiver:
     """
@@ -36,35 +56,60 @@ class KudosGiver:
         """
         Login using email and password
         """
-        self.page.goto(os.path.join(BASE_URL, 'login'))
+        step = 'open'
         try:
-            self.page.get_by_role("button", name="Reject").click(timeout=5000)
-        except Exception as _:
-            pass
-        self.page.get_by_role("textbox", name='email').fill(self.EMAIL)
-        self.page.get_by_role("textbox", name="password").fill(self.PASSWORD)
-        self.page.get_by_role("button", name="Log In").click()
+            self.page.goto(BASE_URL + 'login', wait_until='domcontentloaded')
+            try:
+                self.page.get_by_role("button", name="Reject", exact=True).click(timeout=5000)
+            except PlaywrightTimeoutError:
+                pass
+            step = 'email'
+            # Strava renders both mobile and desktop forms. Only use the visible one.
+            email = self.page.locator('input[name="email"]:visible')
+            password = self.page.locator('input[type="password"]:visible')
+            email.fill(self.EMAIL)
+            if not password.is_visible():
+                step = 'continue'
+                email.locator('xpath=ancestor::form[1]').locator('[type="submit"]').click()
+                step = 'password_option'
+                use_password = self.page.locator('[data-testid="use-password-cta"]:visible')
+                password.or_(use_password).first.wait_for(state='visible')
+                if use_password.is_visible():
+                    use_password.click()
+            step = 'password'
+            password.fill(self.PASSWORD)
+            step = 'submit'
+            password.locator('xpath=ancestor::form[1]').locator('[type="submit"]').click()
+            step = 'confirm'
+            self.page.wait_for_url(
+                lambda url: urlparse(url).hostname == 'www.strava.com'
+                and urlparse(url).path.rstrip('/') == '/dashboard',
+                wait_until='domcontentloaded',
+            )
+            step = 'profile'
+            self._run_with_retries(func=self._get_page_and_own_profile)
+        except Exception as error:
+            raise LoginFailure(step, isinstance(error, PlaywrightTimeoutError)) from None
         print("---Logged in!!---")
-        self._run_with_retries(func=self._get_page_and_own_profile)
         
     def _run_with_retries(self, func, retries=3):
         """
         Retry logic with sleep in between tries.
         """
         for i in range(retries):
-            if i == retries - 1:
-                raise Exception(f"Retries {retries} times failed.")
             try:
                 func()
                 return
-            except Exception as _:
+            except Exception:
+                if i == retries - 1:
+                    raise
                 time.sleep(1)
 
     def _get_page_and_own_profile(self):
         """
         Limit activities count by GET parameter and get own profile ID.
         """
-        self.page.goto(os.path.join(BASE_URL, f"dashboard?num_entries={self.num_entries}"))
+        self.page.goto(BASE_URL + f"dashboard?num_entries={self.num_entries}")
 
         ## Scrolling for lazy loading elements.
         for _ in range(5):
@@ -72,10 +117,7 @@ class KudosGiver:
             time.sleep(0.5)
             self.page.keyboard.press('PageUp')
 
-        try:
-            self.own_profile_id = self.page.locator(".user-menu > a").get_attribute('href').split("/athletes/")[1]
-        except Exception as _:
-            print("can't find own profile ID")
+        self.own_profile_id = self.page.locator(".user-menu > a").get_attribute('href').split("/athletes/")[1]
 
     def locate_kudos_buttons_and_maybe_give_kudos(self, web_feed_entry_locator) -> int:
         """
@@ -188,6 +230,9 @@ def main():
         kg.email_login()
         phase = "giving kudos"
         kg.give_kudos()
+    except LoginFailure as error:
+        print(str(error), file=sys.stderr)
+        return 1
     except Exception:
         # Playwright exceptions can contain fill values and page data. Never print
         # the exception or traceback from a run that has access to credentials.

@@ -11,9 +11,6 @@ jobs:
   run-kudos-cron:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    env:
-      # Firefox requires HOME to belong to the container's current user (root).
-      HOME: /root
     container:
       # Keep this version in sync with requirements.txt and Dockerfile.
       image: mcr.microsoft.com/playwright/python:v1.63.0-noble
@@ -24,11 +21,12 @@ jobs:
           persist-credentials: false
       - name: Install Python dependencies
         run: python -m pip install --no-cache-dir -r requirements.txt
-      - name: Test credential handling
-        run: python -m unittest discover -s tests -v
+      - name: Test login and credential handling
+        # Scope HOME to Python so the runner's Docker CLI keeps its own config path.
+        run: HOME=/root python -m unittest discover -s tests -v
       - name: Check Firefox startup without credentials
         run: |
-          python - <<'PY'
+          HOME=/root python - <<'PY'
           from playwright.sync_api import sync_playwright
           with sync_playwright() as p:
               browser = p.firefox.launch()
@@ -42,4 +40,4 @@ jobs:
         env:
           STRAVA_EMAIL: ${{ secrets.STRAVA_EMAIL }}
           STRAVA_PASSWORD: ${{ secrets.STRAVA_PASSWORD }}
-        run: python -u give_kudos.py
+        run: HOME=/root python -u give_kudos.py

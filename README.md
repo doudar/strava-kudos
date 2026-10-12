@@ -72,7 +72,9 @@ To add secrets for GH actions, navigate to Settings -> Security -> Secrets and V
 
 The scheduled and manually dispatched jobs run inside the Playwright Python container. Python, Firefox, and browser system libraries come from the image; the job only installs the Python dependencies before running `give_kudos.py`. You can start a manual run from Actions -> Give Strava Kudos -> Run workflow.
 
-The workflow sets `HOME=/root` to match the container user, which Firefox requires. A browser smoke test runs without credentials before the Strava step.
+The workflow sets `HOME=/root` only for Python processes to match the container user, which Firefox requires. This leaves the runner's Docker configuration path unchanged. A browser smoke test runs without credentials before the Strava step.
+
+Login supports both the older combined form and Strava's email-first flow, including its "use password" option when offered. Login failures identify the operation that failed using fixed messages; they never print the current URL, page contents, or raw Playwright error. An account that requires a one-time code or additional verification still needs manual attention; the script does not bypass those checks.
 
 ### Credential handling
 
