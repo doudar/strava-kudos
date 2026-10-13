@@ -1,8 +1,6 @@
 name: Give Strava Kudos
 
 on:
-  schedule:
-    - cron: "30 5-23/6 * * *"
   workflow_dispatch:
 
 permissions:
